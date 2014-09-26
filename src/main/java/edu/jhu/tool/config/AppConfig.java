@@ -26,6 +26,9 @@ public class AppConfig {
     @Inject @Named("dropbox.selector.fileDownloadAnchor")
     private String SELECTOR;
 
+    @Inject @Named("metadata.pagenumber.delimiter")
+    private String PAGE_NUMBER_DELIMITER;
+
     public String getBASE_URL() {
         return BASE_URL;
     }
@@ -48,5 +51,9 @@ public class AppConfig {
 
     public int getMAX_TIMEOUT() {
         return MAX_TIMEOUT;
+    }
+
+    public String getPAGE_NUMBER_DELIMITER() {
+        return PAGE_NUMBER_DELIMITER;
     }
 }

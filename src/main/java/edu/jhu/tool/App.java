@@ -5,12 +5,11 @@ import com.google.inject.Injector;
 import edu.jhu.tool.config.AppConfig;
 import edu.jhu.tool.config.AppModule;
 import org.apache.commons.io.FileUtils;
+import org.apache.commons.io.IOUtils;
 import org.apache.poi.hssf.usermodel.HSSFWorkbook;
-import org.apache.poi.ss.usermodel.Cell;
 import org.apache.poi.ss.usermodel.Row;
 import org.apache.poi.ss.usermodel.Sheet;
 import org.apache.poi.ss.usermodel.Workbook;
-import org.apache.poi.ss.util.WorkbookUtil;
 import org.jsoup.Jsoup;
 import org.jsoup.nodes.Document;
 import org.jsoup.nodes.Element;
@@ -18,12 +17,14 @@ import org.jsoup.select.Elements;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.OutputStream;
 import java.net.URL;
 import java.net.URLDecoder;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -43,6 +44,14 @@ public class App  {
         boolean isXLS() {
             return name.endsWith(".xls");
         }
+
+        @Override
+        public String toString() {
+            return "DropboxFile{" +
+                    "name='" + name + '\'' +
+                    ", url='" + url + '\'' +
+                    '}';
+        }
     }
 
     private class DropboxImageFile extends DropboxFile {
@@ -51,6 +60,19 @@ public class App  {
         String publicationDate;
         String[] pageNumbers;
         int sortOrder;
+
+        @Override
+        public String toString() {
+            return "DropboxImageFile{" +
+                    "name='" + name + '\'' +
+                    ", url='" + url + '\'' +
+                    ", callNumber='" + callNumber + '\'' +
+                    ", title='" + title + '\'' +
+                    ", publicationDate='" + publicationDate + '\'' +
+                    ", pageNumbers=" + Arrays.toString(pageNumbers) +
+                    ", sortOrder=" + sortOrder +
+                    '}';
+        }
     }
 
     private class DownloadRunnable implements Runnable {
@@ -111,16 +133,26 @@ public class App  {
 //
 //            if (cmd.equals(config.getCMD_DOWNLOAD())) {
 //                downloadFiles();
+//            } else if (cmd.equals("convert-metadata")) {
+//                DropboxFile xls = new DropboxFile();
+//                xls.name = "Ha2 files list.xls";
+//
+//                XLStoCSV(xls);
 //            }
 //        }
 
+
         DropboxFile xls = new DropboxFile();
         xls.name = "Ha2 files list.xls";
-
-        processExcel(xls);
+//        processExcel(xls);
+        XLStoCSV(xls);
 
     }
 
+    /**
+     *
+     * @throws Exception
+     */
     private void downloadFiles() throws Exception {
         String baseUrl = config.getBASE_URL();
 
@@ -172,14 +204,20 @@ public class App  {
             DownloadRunnable downloader = new DownloadRunnable(dbFile, outputFilePath);
             executorService.execute(downloader);
         }
+
+        executorService.shutdown();
     }
 
+    /**
+     *
+     * @param file metadata XLS file
+     */
+    private List<DropboxImageFile> processExcel(DropboxFile file) {
+        List<DropboxImageFile> images = new ArrayList<>();
 
-
-    private void processExcel(DropboxFile file) {
         if (!file.isXLS()) {
             System.out.println("File [" + file.name + "] does not exist.");
-            return;
+            return images;
         }
 
         Path inPath = Paths.get(config.getOUTPUT_DIR() + file.name);
@@ -190,35 +228,107 @@ public class App  {
 
             boolean isFirst = true;
             for (Row row : sheet) {
+                // First row = column headers. Skip.
                 if (isFirst) {
                     isFirst = false;
                     continue;
                 }
 
                 if (row.getPhysicalNumberOfCells() != 6) {
-                    // filename
-                    // call number
-                    // title
-                    // publication date
-                    // page numbers
-                    // sort order
+                    continue;
                 }
 
-                Cell cell = row.getCell(0);
+                DropboxImageFile image = new DropboxImageFile();
 
-                System.out.println(cell.getStringCellValue());
+                image.name = row.getCell(0).getStringCellValue();
+                image.callNumber = row.getCell(1).getStringCellValue();
+                image.title = row.getCell(2).getStringCellValue();
+                image.publicationDate = row.getCell(3).getStringCellValue();
+
+                String pn = row.getCell(4).getStringCellValue();
+                image.pageNumbers = pn.split(config.getPAGE_NUMBER_DELIMITER());
+
+                String so = row.getCell(5).getStringCellValue();
+                try {
+                    image.sortOrder = Integer.parseInt(so);
+                } catch (NumberFormatException e) {
+                    image.sortOrder = Integer.MAX_VALUE;
+                }
+
+                images.add(image);
             }
-
         } catch (IOException e) {
             System.err.println("Error: Cannot read file: [" + inPath.toString() + "]");
         }
-//        InputStream inp = new FileInputStream("workbook.xls");
-//        //InputStream inp = new FileInputStream("workbook.xlsx");
-//
-//        Workbook wb = WorkbookFactory.create(inp);
-//        Sheet sheet = wb.getSheetAt(0);
-//        Row row = sheet.getRow(2);
-//        Cell cell = row.getCell(3);
+
+        return images;
+    }
+
+    private void XLStoCSV(DropboxFile file) {
+        if (!file.isXLS()) {
+            System.out.println("File [" + file.name + "] does not exist.");
+            return;
+        }
+
+        String csv = null;
+
+        Path inPath = Paths.get(config.getOUTPUT_DIR() + file.name);
+        try (InputStream in = Files.newInputStream(inPath)) {
+
+            Workbook wb = new HSSFWorkbook(in);
+            Sheet sheet = wb.getSheetAt(0);
+
+            int max_cols = 0;
+            // Discover maximum number of columns
+            for (Row row : sheet) {
+                if (row.getLastCellNum() > max_cols) {
+                    max_cols = row.getLastCellNum();
+                }
+            }
+
+            StringBuilder sb = new StringBuilder();
+            for (Row row : sheet) {
+                for (int i = 0; i < max_cols; i++) {
+                    String value = row.getCell(i).getStringCellValue();
+                    boolean hasComma = value.contains(",");
+
+                    if (hasComma) {
+                        sb.append('"');
+                        sb.append(value);
+                        sb.append('"');
+                    } else {
+                        sb.append(value);
+                    }
+
+                    if (i != max_cols - 1) {
+                        sb.append(",");
+                    } else {
+                        sb.append("\n");
+                    }
+                }
+            }
+
+            csv = sb.toString();
+
+        } catch (IOException e) {
+            System.err.println("Error: Failed to read file. [" + inPath.toString() + "]");
+        }
+
+
+        String outName = file.name;
+        if (outName.endsWith(".xls")) {
+            outName = outName.substring(0, outName.length() - 4);
+        }
+
+        Path outPath = Paths.get(config.getOUTPUT_DIR() + outName + ".csv");
+        if (isBlank(csv) || Files.exists(outPath)) {
+            return;
+        }
+        try (OutputStream out = Files.newOutputStream(outPath)) {
+            IOUtils.write(csv, out, "UTF-8");
+        } catch (IOException e) {
+            System.err.println("Error: Failed to write file. [" + outPath.toString() + "]");
+        }
     }
 
     private boolean isBlank(String str) {
