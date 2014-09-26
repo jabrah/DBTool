@@ -145,7 +145,7 @@ public class App  {
         DropboxFile xls = new DropboxFile();
         xls.name = "Ha2 files list.xls";
 //        processExcel(xls);
-        XLStoCSV(xls);
+//        XLStoCSV(xls);
 
     }
 
@@ -264,6 +264,12 @@ public class App  {
         return images;
     }
 
+    /**
+     * Convert a Microsoft Office Excel spreadsheet to a .csv file. This file will have the
+     * same name as the original file and will be created in the same directory.
+     *
+     * @param file metadata XLS file
+     */
     private void XLStoCSV(DropboxFile file) {
         if (!file.isXLS()) {
             System.out.println("File [" + file.name + "] does not exist.");
