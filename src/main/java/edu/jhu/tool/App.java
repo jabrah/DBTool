@@ -18,8 +18,10 @@ import org.jsoup.select.Elements;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.io.UnsupportedEncodingException;
 import java.net.URL;
 import java.net.URLDecoder;
+import java.nio.file.DirectoryStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -125,41 +127,111 @@ public class App  {
 
     // ----------------------------------------------------------------------------------
 
+    private Document dropboxPage;
+
     public void run(String[] args) throws Exception {
-//        if (args.length == 0) {
-//            downloadFiles();
-//        } else {
-//            String cmd = args[0];
-//
-//            if (cmd.equals(config.getCMD_DOWNLOAD())) {
-//                downloadFiles();
-//            } else if (cmd.equals("convert-metadata")) {
-//                DropboxFile xls = new DropboxFile();
-//                xls.name = "Ha2 files list.xls";
-//
-//                XLStoCSV(xls);
-//            }
-//        }
+        if (args.length == 0) {
+            downloadFiles();
+            checkDownload();
+        } else {
+            String cmd = args[0];
 
+            if (cmd.equals(config.getCMD_DOWNLOAD())) {
+                downloadFiles();
+            } else if (cmd.equals(config.getCMD_CONVERT_XLS())) {
+                DropboxFile xls = new DropboxFile();
+                xls.name = "Ha2 files list.xls";
 
-        DropboxFile xls = new DropboxFile();
-        xls.name = "Ha2 files list.xls";
-//        processExcel(xls);
-//        XLStoCSV(xls);
+                XLStoCSV(xls);
+            } else if (cmd.equals(config.getCMD_CHECK_DOWNLOADS())) {
+                checkDownload();
+            }
+        }
+    }
 
+    private boolean existsInPath(DropboxFile file, Path path) throws IOException {
+        try (DirectoryStream<Path> ds = Files.newDirectoryStream(path)) {
+            for (Path p : ds) {
+                String filename = p.getFileName().toString().split("\\.")[0];
+                if (file.name.equals(filename)) {
+                    return true;
+                }
+            }
+        }
+        return false;
     }
 
     /**
+     * Checks files in file system against the XLS metadata. If a file specified in the metadata
+     * does not exist on the file system, an attempt will be made to download it.
      *
-     * @throws Exception
+     * @throws IOException
      */
-    private void downloadFiles() throws Exception {
+    private void checkDownload() throws IOException {
+        System.out.println("Checking downloaded files.");
+
+        DropboxFile xls = new DropboxFile();
+        xls.name = "Ha2 files list.xls";
+
+        List<DropboxImageFile> images = processExcel(xls);
+        List<String> errors = new ArrayList<>();
+
+        Path downloadPath = Paths.get(config.getOUTPUT_DIR());
+        for (DropboxImageFile image : images) {
+            if (!existsInPath(image, downloadPath)) {
+                try {
+                    System.out.println("Trying to re-download file. [" + image.name + "]");
+                    downloadFile(image.name);
+                } catch (Exception e) {
+                    errors.add("Image specified in XML file [" + image.name + "] does not exist in the path ["
+                            + downloadPath.toString() + "].");
+                }
+            }
+        }
+
+        if (errors.size() > 0) {
+            for (String err : errors) {
+                System.out.println("Error: " + err);
+            }
+        }
+    }
+
+    private void downloadFile(String filename) throws IOException {
+        List<DropboxFile> files = getFilesList();
+
+        System.out.println();
+        ExecutorService service = Executors.newFixedThreadPool(1);
+        for (DropboxFile file : files) {
+            String dropboxFileName = file.name.split("\\.")[0];
+
+            if (filename.equals(dropboxFileName)) {
+                String outputFilePath = config.getOUTPUT_DIR() + file.name;
+
+                DownloadRunnable download = new DownloadRunnable(file, outputFilePath);
+                service.execute(download);
+            }
+        }
+
+        service.shutdown();
+    }
+
+    private Document getDropboxPageFromWeb() throws IOException {
+        if (dropboxPage != null) {
+            return dropboxPage;
+        }
+
         String baseUrl = config.getBASE_URL();
 
         System.out.println("Connecting to the Dropbox page. Please wait a few moments.");
         System.out.println("  [" + baseUrl + "]");
-        Document dbPage = Jsoup.connect(baseUrl).timeout(config.getMAX_TIMEOUT()).get(); // 30s timeout
+        dropboxPage = Jsoup.connect(baseUrl).timeout(config.getMAX_TIMEOUT()).get(); // 30s timeout
         System.out.println("Connected to Dropbox, extracting file URLs");
+
+        return dropboxPage;
+    }
+
+    private List<DropboxFile> getFilesList() throws IOException {
+        Document dbPage = getDropboxPageFromWeb();
 
         // Look in the file list view
         Elements listEls = dbPage.select(config.getSELECTOR());
@@ -169,7 +241,6 @@ public class App  {
             System.exit(1);
         }
 
-        // Map (file name) -> (download URL)
         List<DropboxFile> dbFiles = new ArrayList<>();
         for (Element el : listEls) {
             String url = el.attr("href");
@@ -194,6 +265,16 @@ public class App  {
                 dbFiles.add(file);
             }
         }
+
+        return dbFiles;
+    }
+
+    /**
+     *
+     * @throws Exception
+     */
+    private void downloadFiles() throws Exception {
+        List<DropboxFile> dbFiles = getFilesList();
 
         System.out.println();
         // Download multiple files simultaneously

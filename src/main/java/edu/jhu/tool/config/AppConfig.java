@@ -17,6 +17,12 @@ public class AppConfig {
     @Inject @Named("command.download")
     private String CMD_DOWNLOAD;
 
+    @Inject @Named("command.check")
+    private String CMD_CHECK_DOWNLOADS;
+
+    @Inject @Named("command.convert-metadata")
+    private String CMD_CONVERT_XLS;
+
     @Inject @Named("threads.max")
     private int MAX_THREADS;
 
@@ -39,6 +45,14 @@ public class AppConfig {
 
     public String getCMD_DOWNLOAD() {
         return CMD_DOWNLOAD;
+    }
+
+    public String getCMD_CHECK_DOWNLOADS() {
+        return CMD_CHECK_DOWNLOADS;
+    }
+
+    public String getCMD_CONVERT_XLS() {
+        return CMD_CONVERT_XLS;
     }
 
     public int getMAX_THREADS() {
