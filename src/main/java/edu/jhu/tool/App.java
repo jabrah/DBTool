@@ -261,17 +261,40 @@ public class App  {
     }
 
     public String processName(String name) {
-        StringBuilder sb = new StringBuilder(config.getBOOK_ID());
+
+        if (name.equals("front outside cover")) {
+            name = "binding frontcover";
+        } else if (name.equals("back outside cover")) {
+            name = "binding backcover";
+        } else if (name.equals("back inside cover")) {
+            name = "endmatter pastedown";
+        } else if (name.equals("inside front cover")) {
+            name = "frontmatter pastedown";
+        } else if (name.equals("spine")) {
+            name = "binding spine";
+        } else if (name.equals("head") || name.equals("fore-edge") || name.equals("tail")) {
+            name = "misc " + name.replace("-", "");
+        }
 
         String[] parts = name.split("\\s+");
+
+        StringBuilder sb = new StringBuilder(config.getBOOK_ID());
         for (String part : parts) {
             if (part.equalsIgnoreCase("fol.")) {
+                continue;
+            } else if (part.equals("(blank)")) {
                 continue;
             }
 
             if (part.matches("\\d+(r|v)")) {
                 int n = Integer.parseInt(part.substring(0, part.length() - 1));
                 part = String.format("%03d", n) + part.substring(part.length() - 1);
+            } else if (part.equals("back")) {
+                part = "endmatter";
+            } else if (part.equals("front")) {
+                part = "frontmatter";
+            } else if (part.equals("endleaf")) {
+                part = "flyleaf";
             }
 
             sb.append('.');
