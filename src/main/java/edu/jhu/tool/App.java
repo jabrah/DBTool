@@ -102,7 +102,8 @@ public class App  {
                 return;
             }
 
-            System.out.println("Downloading [" + filename + "] from [" + url + "]");
+            System.out.println("Downloading [" + filename + "] from [" + url
+                    + "] to path [" + outputFile + "]");
 
             int timeouts = 30000;
             try {
@@ -165,14 +166,7 @@ public class App  {
 
     public void run(String[] args) throws Exception {
         if (args.length == 0) {
-//            downloadFiles();
-//            checkDownload();
-
-            DropboxFile xls = new DropboxFile();
-            xls.name = "Ha2 files list.xls";
-
-            List<DropboxImageFile> images = processExcel(xls);
-            imageMagick(images);
+            System.err.println("Issue a command. (download|check-downloaded-files|convert-metadata|split-images)");
         } else {
             String cmd = args[0];
 
@@ -185,6 +179,12 @@ public class App  {
                 XLStoCSV(xls);
             } else if (cmd.equals(config.getCMD_CHECK_DOWNLOADS())) {
                 checkDownload();
+            } else if (cmd.equals(config.getCMD_SPLIT_IMAGES())) {
+                DropboxFile xls = new DropboxFile();
+                xls.name = "Ha2 files list.xls";
+
+                List<DropboxImageFile> images = processExcel(xls);
+                imageMagick(images);
             }
         }
     }
@@ -243,18 +243,18 @@ public class App  {
                 continue;
             }
 
-//            Path rectoPath  = splitPath.resolve(processName(pageNumbers.get(0)));
-//            ImageSplitterRunnable splitterRecto = new ImageSplitterRunnable(GRAVITY_RECTO, imagePath, rectoPath);
-//            executorService.execute(splitterRecto);
-//
-//            if (pageNumbers.size() != 2) {
-//                continue;
-//            }
-//
-//            Path versoPath = splitPath.resolve(processName(pageNumbers.get(1)));
-//
-//            ImageSplitterRunnable splitterVerso = new ImageSplitterRunnable(GRAVITY_VERSO, imagePath, versoPath);
-//            executorService.execute(splitterVerso);
+            Path rectoPath  = splitPath.resolve(processName(pageNumbers.get(0)));
+            ImageSplitterRunnable splitterRecto = new ImageSplitterRunnable(GRAVITY_RECTO, imagePath, rectoPath);
+            executorService.execute(splitterRecto);
+
+            if (pageNumbers.size() != 2) {
+                continue;
+            }
+
+            Path versoPath = splitPath.resolve(processName(pageNumbers.get(1)));
+
+            ImageSplitterRunnable splitterVerso = new ImageSplitterRunnable(GRAVITY_VERSO, imagePath, versoPath);
+            executorService.execute(splitterVerso);
         }
 
         executorService.shutdown();

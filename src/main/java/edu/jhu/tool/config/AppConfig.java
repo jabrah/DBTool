@@ -29,6 +29,9 @@ public class AppConfig {
     @Inject @Named("command.convert-metadata")
     private String CMD_CONVERT_XLS;
 
+    @Inject @Named("command.split-images")
+    private String CMD_SPLIT_IMAGES;
+
     @Inject @Named("threads.max")
     private int MAX_THREADS;
 
@@ -67,6 +70,10 @@ public class AppConfig {
 
     public String getCMD_CONVERT_XLS() {
         return CMD_CONVERT_XLS;
+    }
+
+    public String getCMD_SPLIT_IMAGES() {
+        return CMD_SPLIT_IMAGES;
     }
 
     public int getMAX_THREADS() {
