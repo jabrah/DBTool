@@ -8,6 +8,9 @@ import com.google.inject.name.Named;
  */
 public class AppConfig {
 
+    @Inject @Named("book.id")
+    private String BOOK_ID;
+
     @Inject @Named("baseUrl")
     private String BASE_URL;
 
@@ -34,6 +37,10 @@ public class AppConfig {
 
     @Inject @Named("metadata.pagenumber.delimiter")
     private String PAGE_NUMBER_DELIMITER;
+
+    public String getBOOK_ID() {
+        return BOOK_ID;
+    }
 
     public String getBASE_URL() {
         return BASE_URL;

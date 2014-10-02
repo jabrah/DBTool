@@ -30,6 +30,7 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.RunnableFuture;
 
 /**
  *
@@ -131,8 +132,14 @@ public class App  {
 
     public void run(String[] args) throws Exception {
         if (args.length == 0) {
-            downloadFiles();
-            checkDownload();
+//            downloadFiles();
+//            checkDownload();
+
+            DropboxFile xls = new DropboxFile();
+            xls.name = "Ha2 files list.xls";
+
+            List<DropboxImageFile> images = processExcel(xls);
+            imageMagick(images);
         } else {
             String cmd = args[0];
 
@@ -147,6 +154,92 @@ public class App  {
                 checkDownload();
             }
         }
+    }
+
+    private class ImageSplitterRunnable implements Runnable {
+
+        private Path original;
+        private Path output;
+        private String gravity;
+
+        ImageSplitterRunnable(String gravity, Path original, Path output) {
+            this.original = original;
+            this.output = output;
+            this.gravity = gravity;
+        }
+
+        @Override
+        public void run() {
+
+        }
+    }
+
+    /**
+     * Split images using ImageMagick and rename each image, loosely following our
+     * archive naming convention.
+     *
+     * @param images list of DropboxImageFiles
+     * @throws IOException
+     * @throws InterruptedException
+     */
+    private void imageMagick(List<DropboxImageFile> images) throws IOException, InterruptedException {
+        Path inPath = Paths.get(config.getOUTPUT_DIR());
+
+        for (DropboxImageFile image : images) {
+            String name = image.name.endsWith(".tif") ? image.name : image.name + ".tif";
+            Path imagePath = inPath.resolve(name);
+
+            if (!Files.isRegularFile(imagePath)) {
+                continue;
+            }
+
+            List<String> pageNumbers = Arrays.asList(image.pageNumbers);
+            if (pageNumbers.size() != 2 || pageNumbers.contains("none")) {
+                continue;
+            }
+
+            String[] pageNames = image.pageNumbers;
+
+            String pageLeft = inPath.resolve("pages/" + processName(pageNames[0])).toString();
+            String pageRight = inPath.resolve("pages/" + processName(pageNames[1])).toString();
+
+            String getLeft = "convert -crop 55%x100% -gravity west " + imagePath.toString()
+                    + " +repage " + pageLeft;
+            String getRight = "convert -crop 55%x100% -gravity east " + imagePath.toString()
+                    + " +repage " + pageRight;
+
+            System.out.println(getLeft);
+            Process p1 = Runtime.getRuntime().exec(getLeft);
+            p1.waitFor();
+
+            System.out.println(getRight);
+            Process p2 = Runtime.getRuntime().exec(getRight);
+            p2.waitFor();
+
+        }
+    }
+
+    public String processName(String name) {
+        StringBuilder sb = new StringBuilder(config.getBOOK_ID());
+
+        String[] parts = name.split("\\s+");
+        for (String part : parts) {
+            if (part.equalsIgnoreCase("fol.")) {
+                continue;
+            }
+
+            if (part.matches("\\d+(r|v)")) {
+                int n = Integer.parseInt(part.substring(0, part.length() - 1));
+                part = String.format("%03d", n) + part.substring(part.length() - 1);
+            }
+
+            sb.append('.');
+            sb.append(part);
+
+        }
+
+        sb.append(".tif");
+        return sb.toString();
     }
 
     private boolean existsInPath(DropboxFile file, Path path) throws IOException {
