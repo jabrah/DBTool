@@ -14,8 +14,11 @@ public class AppConfig {
     @Inject @Named("baseUrl")
     private String BASE_URL;
 
-    @Inject @Named("output.directory")
-    private String OUTPUT_DIR;
+    @Inject @Named("download.directory")
+    private String DOWNLOAD_DIRECTORY;
+
+    @Inject @Named("split.directory")
+    private String SPLIT_DIRECTORY;
 
     @Inject @Named("command.download")
     private String CMD_DOWNLOAD;
@@ -46,8 +49,12 @@ public class AppConfig {
         return BASE_URL;
     }
 
-    public String getOUTPUT_DIR() {
-        return OUTPUT_DIR;
+    public String getDOWNLOAD_DIRECTORY() {
+        return DOWNLOAD_DIRECTORY;
+    }
+
+    public String getSPLIT_DIRECTORY() {
+        return SPLIT_DIRECTORY;
     }
 
     public String getCMD_DOWNLOAD() {

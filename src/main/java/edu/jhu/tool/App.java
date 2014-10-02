@@ -18,7 +18,6 @@ import org.jsoup.select.Elements;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
-import java.io.UnsupportedEncodingException;
 import java.net.URL;
 import java.net.URLDecoder;
 import java.nio.file.DirectoryStream;
@@ -30,12 +29,14 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
-import java.util.concurrent.RunnableFuture;
+import java.util.concurrent.TimeUnit;
 
 /**
  *
  */
 public class App  {
+    private static final String GRAVITY_VERSO = "east";
+    private static final String GRAVITY_RECTO = "west";
 
     private class DropboxFile {
         String name;
@@ -112,6 +113,38 @@ public class App  {
         }
     }
 
+    private class ImageSplitterRunnable implements Runnable {
+
+        private Path original;
+        private Path output;
+        private String gravity;
+
+        ImageSplitterRunnable(String gravity, Path original, Path output) {
+            this.original = original;
+            this.output = output;
+            this.gravity = gravity;
+        }
+
+        @Override
+        public void run() {
+            String command = "convert -crop 55%x100% -gravity " + gravity
+                    + " " + original.toString() + " +repage " + output.toString();
+
+            boolean result = false;
+            System.out.println(command);
+            try {
+                Process p = Runtime.getRuntime().exec(command);
+                result = p.waitFor(30, TimeUnit.SECONDS);
+            } catch (IOException | InterruptedException e) {
+                System.err.println("Command failed.\n  " + command);
+            }
+
+            if (!result) {
+                System.err.println("Command timed out!\n  " + command);
+            }
+        }
+    }
+
     private AppConfig config;
 
     public App(AppConfig config) {
@@ -156,24 +189,6 @@ public class App  {
         }
     }
 
-    private class ImageSplitterRunnable implements Runnable {
-
-        private Path original;
-        private Path output;
-        private String gravity;
-
-        ImageSplitterRunnable(String gravity, Path original, Path output) {
-            this.original = original;
-            this.output = output;
-            this.gravity = gravity;
-        }
-
-        @Override
-        public void run() {
-
-        }
-    }
-
     /**
      * Split images using ImageMagick and rename each image, loosely following our
      * archive naming convention.
@@ -183,40 +198,66 @@ public class App  {
      * @throws InterruptedException
      */
     private void imageMagick(List<DropboxImageFile> images) throws IOException, InterruptedException {
-        Path inPath = Paths.get(config.getOUTPUT_DIR());
+        Path inPath = Paths.get(config.getDOWNLOAD_DIRECTORY());
+        Path splitPath = Paths.get(config.getSPLIT_DIRECTORY());
 
+        if (!Files.exists(splitPath)) {
+            System.out.println("Creating new directory. [" + splitPath.toString() + "]");
+            Runtime.getRuntime().exec("mkdir " + splitPath.toString());
+        }
+
+        ExecutorService executorService = Executors.newFixedThreadPool(8);
         for (DropboxImageFile image : images) {
             String name = image.name.endsWith(".tif") ? image.name : image.name + ".tif";
             Path imagePath = inPath.resolve(name);
 
-            if (!Files.isRegularFile(imagePath)) {
-                continue;
-            }
-
             List<String> pageNumbers = Arrays.asList(image.pageNumbers);
-            if (pageNumbers.size() != 2 || pageNumbers.contains("none")) {
+
+            if (!Files.isRegularFile(imagePath) || pageNumbers.isEmpty()) {
                 continue;
             }
 
-            String[] pageNames = image.pageNumbers;
+            if (pageNumbers.contains("none") || pageNumbers.size() != 2) {
 
-            String pageLeft = inPath.resolve("pages/" + processName(pageNames[0])).toString();
-            String pageRight = inPath.resolve("pages/" + processName(pageNames[1])).toString();
+                String filename = "";
+                for (String str : pageNumbers) {
+                    if (!str.equalsIgnoreCase("none")) {
+                        filename = str;
+                        break;
+                    }
+                }
+                Path destination = splitPath.resolve(processName(filename));
+                String command = "cp " + imagePath + " " + destination;
 
-            String getLeft = "convert -crop 55%x100% -gravity west " + imagePath.toString()
-                    + " +repage " + pageLeft;
-            String getRight = "convert -crop 55%x100% -gravity east " + imagePath.toString()
-                    + " +repage " + pageRight;
+                executorService.execute(() -> {
+                    System.out.println("Copying and renaming original file. ["
+                            + imagePath.toString() + "] -> [" + destination.toString() + "]");
 
-            System.out.println(getLeft);
-            Process p1 = Runtime.getRuntime().exec(getLeft);
-            p1.waitFor();
+                    try {
+                        Runtime.getRuntime().exec(command);
+                    } catch (IOException e) {
+                        System.err.println("Failed to copy file. [" + imagePath.toString() + "] to [" + destination.toString() + "]");
+                    }
+                });
 
-            System.out.println(getRight);
-            Process p2 = Runtime.getRuntime().exec(getRight);
-            p2.waitFor();
+                continue;
+            }
 
+//            Path rectoPath  = splitPath.resolve(processName(pageNumbers.get(0)));
+//            ImageSplitterRunnable splitterRecto = new ImageSplitterRunnable(GRAVITY_RECTO, imagePath, rectoPath);
+//            executorService.execute(splitterRecto);
+//
+//            if (pageNumbers.size() != 2) {
+//                continue;
+//            }
+//
+//            Path versoPath = splitPath.resolve(processName(pageNumbers.get(1)));
+//
+//            ImageSplitterRunnable splitterVerso = new ImageSplitterRunnable(GRAVITY_VERSO, imagePath, versoPath);
+//            executorService.execute(splitterVerso);
         }
+
+        executorService.shutdown();
     }
 
     public String processName(String name) {
@@ -269,7 +310,7 @@ public class App  {
         List<DropboxImageFile> images = processExcel(xls);
         List<String> errors = new ArrayList<>();
 
-        Path downloadPath = Paths.get(config.getOUTPUT_DIR());
+        Path downloadPath = Paths.get(config.getDOWNLOAD_DIRECTORY());
         for (DropboxImageFile image : images) {
             if (!existsInPath(image, downloadPath)) {
                 try {
@@ -298,7 +339,7 @@ public class App  {
             String dropboxFileName = file.name.split("\\.")[0];
 
             if (filename.equals(dropboxFileName)) {
-                String outputFilePath = config.getOUTPUT_DIR() + file.name;
+                String outputFilePath = config.getDOWNLOAD_DIRECTORY() + file.name;
 
                 DownloadRunnable download = new DownloadRunnable(file, outputFilePath);
                 service.execute(download);
@@ -367,13 +408,18 @@ public class App  {
      * @throws Exception
      */
     private void downloadFiles() throws Exception {
+        if (!Files.exists(Paths.get(config.getDOWNLOAD_DIRECTORY()))) {
+            System.out.println("Creating new directory. [" + config.getDOWNLOAD_DIRECTORY() + "]");
+            Runtime.getRuntime().exec("mkdir " + config.getDOWNLOAD_DIRECTORY());
+        }
+
         List<DropboxFile> dbFiles = getFilesList();
 
         System.out.println();
         // Download multiple files simultaneously
         ExecutorService executorService = Executors.newFixedThreadPool(config.getMAX_THREADS());
         for (DropboxFile dbFile : dbFiles) {
-            String outputFilePath = config.getOUTPUT_DIR() + dbFile.name;
+            String outputFilePath = config.getDOWNLOAD_DIRECTORY() + dbFile.name;
 
             DownloadRunnable downloader = new DownloadRunnable(dbFile, outputFilePath);
             executorService.execute(downloader);
@@ -394,7 +440,7 @@ public class App  {
             return images;
         }
 
-        Path inPath = Paths.get(config.getOUTPUT_DIR() + file.name);
+        Path inPath = Paths.get(config.getDOWNLOAD_DIRECTORY() + file.name);
         try (InputStream in = Files.newInputStream(inPath)) {
 
             Workbook wb = new HSSFWorkbook(in);
@@ -452,7 +498,7 @@ public class App  {
 
         String csv = null;
 
-        Path inPath = Paths.get(config.getOUTPUT_DIR() + file.name);
+        Path inPath = Paths.get(config.getDOWNLOAD_DIRECTORY() + file.name);
         try (InputStream in = Files.newInputStream(inPath)) {
 
             Workbook wb = new HSSFWorkbook(in);
@@ -500,7 +546,7 @@ public class App  {
             outName = outName.substring(0, outName.length() - 4);
         }
 
-        Path outPath = Paths.get(config.getOUTPUT_DIR() + outName + ".csv");
+        Path outPath = Paths.get(config.getDOWNLOAD_DIRECTORY() + outName + ".csv");
         if (isBlank(csv) || Files.exists(outPath)) {
             return;
         }
